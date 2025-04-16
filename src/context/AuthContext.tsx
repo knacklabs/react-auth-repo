@@ -68,8 +68,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       dispatch({ type: 'AUTH_START' });
       const { data } = await apiService.login(credentials.email, credentials.password);
+      
+      // Store tokens in localStorage
       localStorage.setItem('token', data.token);
       localStorage.setItem('refreshToken', data.refreshToken);
+      
+      // Bug 2: Not properly handling multiple sessions
+      // We should store session IDs and manage them properly
+      // Current implementation allows session hijacking across multiple devices
+      // as we're not tracking or limiting active sessions
+      const activeSession = {
+        token: data.token,
+        refreshToken: data.refreshToken,
+        deviceId: Math.random().toString(36).substring(7), // This is not secure!
+        lastActive: new Date().toISOString()
+      };
+      localStorage.setItem('currentSession', JSON.stringify(activeSession));
+      
       dispatch({
         type: 'AUTH_SUCCESS',
         payload: {
@@ -92,8 +107,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         credentials.email,
         credentials.password
       );
+      
+      // Store tokens and session info
       localStorage.setItem('token', data.token);
       localStorage.setItem('refreshToken', data.refreshToken);
+      
+      const activeSession = {
+        token: data.token,
+        refreshToken: data.refreshToken,
+        deviceId: Math.random().toString(36).substring(7),
+        lastActive: new Date().toISOString()
+      };
+      localStorage.setItem('currentSession', JSON.stringify(activeSession));
+      
       dispatch({
         type: 'AUTH_SUCCESS',
         payload: {
@@ -110,10 +136,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = useCallback(async () => {
     try {
+      // Bug 2: Improper session invalidation
+      // This only removes the tokens from the current browser
+      // but doesn't properly invalidate the session on the server
+      // or other active sessions. The tokens are still valid and can be used!
       await apiService.logout();
-    } finally {
+      
+      // We're only clearing local storage, but the tokens are still valid on other devices
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
+      localStorage.removeItem('currentSession');
+      
+      dispatch({ type: 'LOGOUT' });
+    } catch (error) {
+      // Even if logout fails, we still clear local state
+      // This creates a state where tokens might still be valid on the server
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('currentSession');
       dispatch({ type: 'LOGOUT' });
     }
   }, []);
